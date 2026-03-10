@@ -1,8 +1,8 @@
 # Unified Oncology Decision Support MCP Server
 
-A single MCP server exposing **three clinical decision-support engines**: Cervix, Head & Neck SCC, and Breast Cancer. All follow institutional protocols (AJCC 8th edition).
+A single MCP server exposing **three clinical decision-support engines**: Cervix, Head & Neck SCC, and Breast Cancer. All follow institutional protocols.
 
-⚠️ **Decision-support only.** All recommendations require clinical judgment. Cases flagged as RED require MDT discussion.
+ **Decision-support only.** All recommendations require clinical judgment. Cases flagged as RED require MDT discussion.
 
 ## Cancer sites and tools
 
