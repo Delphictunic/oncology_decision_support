@@ -27,11 +27,7 @@ from mcp.server.fastmcp import FastMCP
 # ── ngine (refactored) ──────────────────────────────────────
 from engines.breast import evaluate_breast_case, BreastInput, BreastResult, Confidence
 from engines.cervix import evaluate_cervix_case, CervixInput, CervixResult, Confidence as CervixConfidence
-
-# ── Existing engines ──────────────────────────────────────────────────────────
-from engines.headneck.hn_models   import HNInput
-from engines.headneck.hn_engine   import evaluate_hn_case
-from engines.headneck.hn_config   import ESSENTIAL_PARAMS, ORAL_CAVITY_EXTRA_PARAMS
+from engines.headneck import evaluate_hn_case, HNInput, HNResult, Confidence as HNConfidence 
 
 # ── GU engines ────────────────────────────────────────────────────────────────
 from engines.gu.prostate_models   import ProstateInput
@@ -90,17 +86,6 @@ def format_validation_errors(validation_error: ValidationError) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 # Parameter hint maps (for non-refactored cancer sites)
 # ═════════════════════════════════════════════════════════════════════════════
-
-HN_ESSENTIAL = ["age","ecog","primary_site","ajcc_stage","t_stage","n_stage","distant_metastasis","resectable","creatinine_clearance"]
-HN_HINTS = {
-    "age":"age (numeric, years)","ecog":"ecog (0|1|2|3|4)",
-    "primary_site":"primary_site (oral_cavity | oropharynx | hypopharynx | larynx)",
-    "ajcc_stage":"ajcc_stage (I|II|III|IVA|IVB|IVC)","t_stage":"t_stage (T1|T2|T3|T4a|T4b)",
-    "n_stage":"n_stage (N0|N1|N2a|N2b|N2c|N3)","distant_metastasis":"distant_metastasis (true | false)",
-    "resectable":"resectable (true | false)","creatinine_clearance":"creatinine_clearance (numeric, mL/min)",
-    "oral_subsite":"oral_subsite (oral_tongue | buccal_mucosa | floor_of_mouth | retromolar_trigone | alveolus_mandibular | alveolus_maxillary | hard_palate | lip)",
-    "doi_mm":"doi_mm — depth of invasion in mm (numeric)",
-}
 
 PROSTATE_ESSENTIAL = ["age","ecog","psa","t_stage","n_stage","m_stage","grade_group","overall_stage","creatinine_clearance"]
 PROSTATE_HINTS = {
@@ -216,39 +201,88 @@ def cervix_cancer(
         return "```\nTOOL ERROR\nReason: " + str(e) + "\n```"
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TOOL 2 — Head & Neck SCC
+# TOOL 2 — Head & Neck SCC (REFACTORED)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def hnscc_decision(
-    age: Optional[int] = None, ecog: Optional[int] = None,
-    primary_site: Optional[str] = None, ajcc_stage: Optional[str] = None,
-    t_stage: Optional[str] = None, n_stage: Optional[str] = None,
-    distant_metastasis: Optional[bool] = None, resectable: Optional[bool] = None,
-    creatinine_clearance: Optional[float] = None, oral_subsite: Optional[str] = None,
-    doi_mm: Optional[float] = None, hpv_positive: Optional[bool] = None,
-    p16_positive: Optional[bool] = None,
+    age: Optional[int] = None,
+    ecog: Optional[int] = None,
+    primary_site: Optional[str] = None,
+    ajcc_stage: Optional[str] = None,
+    t_stage: Optional[str] = None,
+    n_stage: Optional[str] = None,
+    distant_metastasis: Optional[bool] = None,
+    resectable: Optional[bool] = None,
+    creatinine_clearance: Optional[float] = None,
+    oral_subsite: Optional[str] = None,
+    doi_mm: Optional[float] = None,
+    bone_invasion: bool = False,
+    bilateral_nodes: bool = False,
+    prior_surgery: bool = False,
+    prior_rt: bool = False,
+    margins_positive: bool = False,
+    ece_present: bool = False,
+    pni_present: bool = False,
+    lvi_present: bool = False,
+    multiple_positive_nodes: bool = False,
+    p16_positive: bool = False,
+    hearing_adequate: bool = True,
+    recurrent_disease: bool = False,
+    post_rt_residual_nodes: bool = False,
+    organ_preservation_preferred: bool = False,
+    symptomatic_bleeding_or_pain: bool = False,
 ) -> str:
-    """Head & Neck SCC decision support (AJCC 8th edition)."""
+    """
+    Head & Neck SCC clinical decision support. Protocol: Institutional HNSCC v1.0.
+    Required: age, ecog, primary_site, ajcc_stage, t_stage, n_stage, distant_metastasis,
+    resectable, creatinine_clearance. If primary_site=oral_cavity: also oral_subsite, doi_mm.
+    """
     try:
-        m = _check_missing(
-            {"age":age,"ecog":ecog,"primary_site":primary_site,"ajcc_stage":ajcc_stage,
-             "t_stage":t_stage,"n_stage":n_stage,"distant_metastasis":distant_metastasis,
-             "resectable":resectable,"creatinine_clearance":creatinine_clearance},
-            HN_ESSENTIAL, HN_HINTS
-        )
-        if m: return m
-        result = evaluate_hn_case(HNInput(
-            age=age, ecog=ecog, primary_site=primary_site, ajcc_stage=ajcc_stage,
-            t_stage=t_stage, n_stage=n_stage, distant_metastasis=distant_metastasis,
-            resectable=resectable, creatinine_clearance=creatinine_clearance,
-            oral_subsite=oral_subsite, doi_mm=doi_mm, hpv_positive=hpv_positive,
+        # Construct HNInput — Pydantic validates all fields and conditional requirements
+        hn_input = HNInput(
+            age=age,
+            ecog=ecog,
+            primary_site=primary_site,
+            ajcc_stage=ajcc_stage,
+            t_stage=t_stage,
+            n_stage=n_stage,
+            distant_metastasis=distant_metastasis,
+            resectable=resectable,
+            creatinine_clearance=creatinine_clearance,
+            oral_subsite=oral_subsite,
+            doi_mm=doi_mm,
+            bone_invasion=bone_invasion,
+            bilateral_nodes=bilateral_nodes,
+            prior_surgery=prior_surgery,
+            prior_rt=prior_rt,
+            margins_positive=margins_positive,
+            ece_present=ece_present,
+            pni_present=pni_present,
+            lvi_present=lvi_present,
+            multiple_positive_nodes=multiple_positive_nodes,
             p16_positive=p16_positive,
-        ))
+            hearing_adequate=hearing_adequate,
+            recurrent_disease=recurrent_disease,
+            post_rt_residual_nodes=post_rt_residual_nodes,
+            organ_preservation_preferred=organ_preservation_preferred,
+            symptomatic_bleeding_or_pain=symptomatic_bleeding_or_pain,
+        )
+        
+        # Call engine with validated input
+        result = evaluate_hn_case(hn_input)
+        
+        # Return formatted output
         return "```\n" + result.formatted_output + "\n```"
+    
+    except ValidationError as e:
+        # Format Pydantic validation errors into readable message
+        error_msg = format_validation_errors(e)
+        return "```\n" + error_msg + "\n```"
+    
     except Exception as e:
+        # Catch any other exceptions (clinical logic errors, etc.)
         return "```\nTOOL ERROR\nReason: " + str(e) + "\n```"
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TOOL 3 — Breast (REFACTORED)
