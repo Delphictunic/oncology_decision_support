@@ -24,12 +24,11 @@ from pydantic import ValidationError
 
 from mcp.server.fastmcp import FastMCP
 
-# ── Breast cancer engine (refactored) ──────────────────────────────────────
+# ── ngine (refactored) ──────────────────────────────────────
 from engines.breast import evaluate_breast_case, BreastInput, BreastResult, Confidence
+from engines.cervix import evaluate_cervix_case, CervixInput, CervixResult, Confidence as CervixConfidence
 
 # ── Existing engines ──────────────────────────────────────────────────────────
-from engines.cervix.models        import CervixInput
-from engines.cervix.cervix_engine import evaluate_cervix_case
 from engines.headneck.hn_models   import HNInput
 from engines.headneck.hn_engine   import evaluate_hn_case
 from engines.headneck.hn_config   import ESSENTIAL_PARAMS, ORAL_CAVITY_EXTRA_PARAMS
@@ -153,30 +152,68 @@ CNS_HINTS = {
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TOOL 1 — Cervix
+# TOOL 1 — Cervix Cancer (REFACTORED)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 def cervix_cancer(
-    age: Optional[int] = None, figo_stage: Optional[str] = None, histology: Optional[str] = None,
-    scc_antigen: Optional[float] = None, pelvic_mass_size_cm: Optional[float] = None,
-    parametrial_involvement: bool = False, rectosigmoid_involvement: bool = False,
-    bladder_involvement: bool = False, distant_metastasis: bool = False,
+    age: Optional[int] = None,
+    ecog: Optional[int] = None,
+    figo_stage: Optional[str] = None,
+    histology: Optional[str] = None,
+    tumor_size_cm: Optional[float] = None,
+    pelvic_nodes_positive: Optional[bool] = None,
+    para_aortic_nodes_positive: Optional[bool] = None,
+    hydronephrosis: Optional[bool] = None,
+    creatinine_clearance: Optional[float] = None,
+    prior_surgery: bool = False,
+    margins_positive: bool = False,
+    lvsi_present: bool = False,
+    parametrial_invasion: bool = False,
+    distant_metastasis: bool = False,
+    symptomatic_bleeding: bool = False,
+    post_crt_residual: bool = False,
 ) -> str:
-    """Cervical cancer decision support (FIGO 2018 staging)."""
+    """
+    Cervix cancer clinical decision support. Protocol: Institutional Cervix Cancer v1.0.
+    Required: age, ecog, figo_stage, histology, tumor_size_cm, pelvic_nodes_positive,
+    para_aortic_nodes_positive, hydronephrosis, creatinine_clearance.
+    """
     try:
-        result = evaluate_cervix_case(CervixInput(
-            age=age, figo_stage=figo_stage, histology=histology,
-            scc_antigen=scc_antigen, pelvic_mass_size_cm=pelvic_mass_size_cm,
-            parametrial_involvement=parametrial_involvement,
-            rectosigmoid_involvement=rectosigmoid_involvement,
-            bladder_involvement=bladder_involvement,
+        # Construct CervixInput — Pydantic validates all fields and constraints
+        cervix_input = CervixInput(
+            age=age,
+            ecog=ecog,
+            figo_stage=figo_stage,
+            histology=histology,
+            tumor_size_cm=tumor_size_cm,
+            pelvic_nodes_positive=pelvic_nodes_positive,
+            para_aortic_nodes_positive=para_aortic_nodes_positive,
+            hydronephrosis=hydronephrosis,
+            creatinine_clearance=creatinine_clearance,
+            prior_surgery=prior_surgery,
+            margins_positive=margins_positive,
+            lvsi_present=lvsi_present,
+            parametrial_invasion=parametrial_invasion,
             distant_metastasis=distant_metastasis,
-        ))
+            symptomatic_bleeding=symptomatic_bleeding,
+            post_crt_residual=post_crt_residual,
+        )
+        
+        # Call engine with validated input
+        result = evaluate_cervix_case(cervix_input)
+        
+        # Return formatted output
         return "```\n" + result.formatted_output + "\n```"
+    
+    except ValidationError as e:
+        # Format Pydantic validation errors into readable message
+        error_msg = format_validation_errors(e)
+        return "```\n" + error_msg + "\n```"
+    
     except Exception as e:
+        # Catch any other exceptions (clinical logic errors, etc.)
         return "```\nTOOL ERROR\nReason: " + str(e) + "\n```"
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TOOL 2 — Head & Neck SCC
